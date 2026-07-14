@@ -67,6 +67,20 @@ Per lot it produces:
 | **Broker lot data** | User's brokerage export (see Inputs). | Source of truth for quantity, acquisition date, cost basis, share source. |
 | **US tax withheld** (for FTC) | Derived (see §NRA), or the broker's per-payment "Non-Resident Tax" line. | Do **not** use the calendar-year 1042-S total against FY income — that CY/FY mismatch under-claims the credit. |
 
+### Data snapshot & refresh
+`_work/SBI_USD.csv`, `_work/MSFT_ohlc.csv` and `_work/MSFT_Dividends.csv` are
+**committed to this repo** as a versioned, auditable snapshot. This makes runs
+deterministic and offline-safe, and lets you reproduce exactly the figures you
+filed even if the upstream APIs later change. **Before each year's filing**,
+refresh the rate/price series (the dividend history is manual — update it from
+Microsoft IR when a new dividend is declared):
+```powershell
+.\Compute-ScheduleFA.ps1 -Year <YYYY> -LotCsv "<lots>.csv" -RefreshPrices
+```
+The refresh must run after 31 Dec of the filing year so the year-end close and
+December SBI rates are present. Commit the updated CSVs so the snapshot stays
+current and auditable.
+
 ---
 
 ## Methodology (the exact rules)
