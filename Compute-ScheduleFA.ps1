@@ -82,6 +82,18 @@ $Dividends = Import-Csv $dividendFile | ForEach-Object {
 }
 
 # ---------------------------------------------------------------------------
+# Entity metadata for the Schedule FA A3 form (constants, per issuer).
+# For a different company/broker, edit these to match the issuing entity.
+# CountryCode 2 = United States (ITR country code list).
+# ---------------------------------------------------------------------------
+$EntityCountry     = 'UNITED STATES'
+$EntityCountryCode = '2'
+$EntityName        = 'Microsoft Corporation'
+$EntityAddress     = 'One Microsoft Way, Redmond, Washington'
+$EntityZip         = '98052'
+$EntityNature      = 'Listed'
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 function Get-OnOrBefore {
@@ -246,6 +258,27 @@ $csvOut = Join-Path $OutDir "ScheduleFA_A3_CY$Year.csv"
 $results | Export-Csv -Path $csvOut -NoTypeInformation
 Write-Host "Written: $csvOut" -ForegroundColor Green
 
+# ITR-2 Schedule FA Table A3 import format (exact official column order/headers).
+$itrRows = foreach ($r in $results) {
+    [pscustomobject][ordered]@{
+        'Country/Region name'                                                                = $EntityCountry
+        'Country Name and Code'                                                               = $EntityCountryCode
+        'Name of entity'                                                                      = $EntityName
+        'Address of entity'                                                                   = $EntityAddress
+        'ZIP Code'                                                                            = $EntityZip
+        'Nature of entity'                                                                    = $EntityNature
+        'Date of acquiring the interest'                                                      = $r.'Date acquired'
+        'Initial value of the investment'                                                     = $r.'Initial (INR)'
+        'Peak value of investment during the Period'                                          = $r.'Peak (INR)'
+        'Closing balance'                                                                     = $r.'Closing (INR)'
+        'Total gross amount paid/credited with respect to the holding during the period'      = $r.'Dividend (INR)'
+        'Total gross proceeds from sale or redemption of investment during the period'        = $r.'Sale (INR)'
+    }
+}
+$itrOut = Join-Path $OutDir "ScheduleFA_A3_ITR_CY$Year.csv"
+$itrRows | Export-Csv -Path $itrOut -NoTypeInformation
+Write-Host "Written: $itrOut  (ITR-2 A3 import format)" -ForegroundColor Green
+
 # ---------------------------------------------------------------------------
 # Dividend income schedule (Schedule OS / FSI) - total holding basis.
 # Bucketed into ITR-2 "Schedule OS" advance-tax quarters by dividend PAY date.
@@ -323,8 +356,8 @@ $divRows | Export-Csv -Path $divCsv -NoTypeInformation
 # ---------------------------------------------------------------------------
 # HTML report (Schedule FA Table A3 + dividend schedule)
 # ---------------------------------------------------------------------------
-$entity = 'Microsoft Corporation'
-$addr   = 'One Microsoft Way, Redmond, Washington 98052'
+$entity = $EntityName
+$addr   = "$EntityAddress $EntityZip"
 $sb = New-Object System.Text.StringBuilder
 [void]$sb.Append(@"
 <!DOCTYPE html><html><head><meta charset='utf-8'><title>Schedule FA CY$Year</title>

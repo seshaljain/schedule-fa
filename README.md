@@ -18,12 +18,14 @@ Compute India **ITR‑2 "Schedule FA"** (foreign assets) plus the matching forei
    ```
 3. **Read the output** (`ScheduleFA_A3_CY2025.csv` + the HTML report) — Table A3
    per lot (Initial / Peak / Closing / Dividend, INR), the FY dividend total, and
-   the US tax withheld.
+   the US tax withheld. `ScheduleFA_A3_ITR_CY2025.csv` is the same data in the
+   official ITR‑2 A3 bulk‑import column order, ready to upload on the portal.
 4. **Validate** against last year's known‑good numbers and your broker's year‑end
    statement (see the script's regression check).
 5. **File on the ITR portal**:
    - **Schedule FA → Table A3** — one row per lot: Initial / Peak / Closing /
-     Dividend (INR).
+     Dividend (INR). Upload `ScheduleFA_A3_ITR_CY2025.csv` or enter each row
+     manually.
    - **Schedule OS** — add the foreign dividend total to your dividend income.
    - **Schedule FSI + TR (Form 67)** — claim the US tax withheld as foreign tax
      credit.

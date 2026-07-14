@@ -18,15 +18,25 @@ computes everything needed to file **Schedule FA (Table A3)** of ITR-2 for a giv
 **calendar year**, plus the matching **foreign dividend income (Schedule OS/FSI)**
 and **foreign tax credit (Schedule TR / Form 67)** on a **financial-year** basis.
 
-Per lot it produces:
+Per lot it produces one **Schedule FA Table A3** row. The official ITR-2 A3
+bulk-import columns (in order) are:
 
-| Field | Schedule FA A3 column |
-|---|---|
-| Initial value of investment (INR) | Col 6 |
-| Peak value during the period (INR) | Col 7 |
-| Closing balance (INR) | Col 8 |
-| Gross amount paid/credited i.e. dividends (INR) | Col 9 |
-| Gross proceeds from sale/redemption (INR) | Col 10 |
+| # | A3 column | Value |
+|---|---|---|
+| 1 | Country/Region name | `UNITED STATES` |
+| 2 | Country Name and Code | `2` |
+| 3 | Name of entity | `Microsoft Corporation` |
+| 4 | Address of entity | `One Microsoft Way, Redmond, Washington` |
+| 5 | ZIP Code | `98052` |
+| 6 | Nature of entity | `Listed` |
+| 7 | Date of acquiring the interest | acquisition date (`yyyy-MM-dd`) |
+| 8 | Initial value of the investment | `qty × FMV_usd × TTBR(acq)` (INR) |
+| 9 | Peak value of investment during the Period | `qty × max_d(High(d) × TTBR(d))` (INR) |
+| 10 | Closing balance | `qty × Close(31-Dec) × TTBR(31-Dec)` (INR) |
+| 11 | Total gross amount paid/credited … (dividends) | dividends on the lot (INR) |
+| 12 | Total gross proceeds from sale or redemption … | `0` unless sold (INR) |
+
+The script writes these directly as `ScheduleFA_A3_ITR_<CY>.csv`, ready to upload.
 
 > **Important scope note.** Schedule FA Table A3 is reported for the **calendar
 > year** (1 Jan – 31 Dec). Dividend *income* in Schedule OS and the foreign tax
@@ -173,8 +183,9 @@ a `_work` directory and reads the dividend history from `_work/MSFT_Dividends.cs
 Key parameters: `-Year`, `-LotCsv`, `-WorkDir`, `-OutDir`,
 `-DividendBasis CY|FY`, `-NraRate` (default `0.25`; use `0.30` if W-8BEN lapsed),
 `-UsTaxWithheldUsd` (override for a mixed-rate year), `-RefreshPrices`.
-Outputs: `ScheduleFA_A3_<CY>.csv`, `ScheduleFA_Dividends_<basis>.csv`, and an HTML
-report.
+Outputs: `ScheduleFA_A3_<CY>.csv` (detailed, with Qty/Source for validation),
+`ScheduleFA_A3_ITR_<CY>.csv` (official ITR-2 A3 bulk-import column order),
+`ScheduleFA_Dividends_<basis>.csv`, and an HTML report.
 
 ### Path B — Fully manual (no script)
 An agent should:
