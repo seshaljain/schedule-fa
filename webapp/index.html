@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Schedule FA Calculator (ITR-2)</title>
+<style>
+  :root { --blue:#0b5394; --line:#ccc; }
+  body { font-family: "Segoe UI", Arial, sans-serif; margin: 24px; color:#1b1b1b; max-width:1100px; }
+  h1 { font-size: 22px; margin-bottom: 2px; }
+  h2 { font-size: 16px; color: var(--blue); margin-top: 28px; }
+  .sub { color:#666; font-size:13px; margin-top:0; }
+  fieldset { border:1px solid var(--line); border-radius:6px; margin-top:16px; padding:14px 16px; }
+  legend { font-weight:600; color:var(--blue); padding:0 6px; }
+  label { display:inline-block; margin:6px 14px 6px 0; }
+  input[type=number] { width:90px; }
+  .row { margin:8px 0; }
+  button { font-size:14px; padding:8px 16px; cursor:pointer; border:1px solid var(--blue);
+           background:var(--blue); color:#fff; border-radius:5px; }
+  button.sec { background:#fff; color:var(--blue); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  table { border-collapse:collapse; width:100%; margin-top:8px; font-size:13px; }
+  th,td { border:1px solid var(--line); padding:6px 8px; text-align:right; }
+  th { background:#eef3fa; text-align:center; }
+  td.l, th.l { text-align:left; }
+  tfoot td { font-weight:bold; background:#f7f9fc; }
+  .small { color:#666; font-size:12px; }
+  .err { color:#b00020; font-weight:600; white-space:pre-wrap; }
+  .dl { margin-top:10px; }
+  .dl button { margin-right:8px; }
+  #results { margin-top:10px; }
+</style>
+</head>
+<body>
+<h1>Schedule FA Calculator &mdash; ITR-2 (Table A3)</h1>
+<p class="sub">Computes Initial / Peak / Closing / Dividend (INR) for Microsoft (MSFT) shares held via
+Fidelity, using the SBI TT-buy-rate methodology. The reference-rate snapshot loads once from this
+site; your lot file is read locally and never uploaded, and no further network calls are made.</p>
+
+<fieldset>
+  <legend>Inputs</legend>
+  <div class="row">
+    <label>Fidelity lot export (CSV):
+      <input type="file" id="lotFile" accept=".csv,text/csv">
+    </label>
+  </div>
+  <div class="row">
+    <label>Calendar year: <input type="number" id="year" min="2000" max="2100" step="1"></label>
+    <label>NRA withholding rate:
+      <input type="number" id="nra" min="0" max="1" step="0.01" value="0.25"> (0.25 with W-8BEN, else 0.30)
+    </label>
+  </div>
+  <div class="row">
+    <label>Dividend basis:</label>
+    <label><input type="radio" name="basis" value="FY" checked> Financial year (income / FTC)</label>
+    <label><input type="radio" name="basis" value="CY"> Calendar year</label>
+  </div>
+  <div class="row">
+    <button id="go" disabled>Compute</button>
+  </div>
+  <div id="status" class="small">Loading reference data&hellip;</div>
+  <div id="error" class="err"></div>
+</fieldset>
+
+<div id="results"></div>
+
+<p class="small" id="footer"></p>
+
+<script>
+"use strict";
+
+// Reference-data location (same-origin static files served by GitHub Pages).
+// index.html lives in /webapp, the snapshot in /_work -> one level up.
+var DATA_BASE = "../_work/";
+
+// ----- Entity constants for the Schedule FA A3 form (edit for a different issuer) -----
+var ENTITY = {
+  country: "UNITED STATES",
+  code: "2",
+  name: "Microsoft Corporation",
+  address: "One Microsoft Way, Redmond, Washington",
+  zip: "98052",
+  nature: "Listed"
+};
+
+// ----- Minimal quote-aware CSV parser -> array of string arrays -----
+function parseCSV(text) {
+  var rows = [], row = [], field = "", i = 0, inQ = false, c;
+  text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  while (i < text.length) {
+    c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+        inQ = false; i++; continue;
+      }
+      field += c; i++; continue;
+    }
+    if (c === '"') { inQ = true; i++; continue; }
+    if (c === ",") { row.push(field); field = ""; i++; continue; }
+    if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; i++; continue; }
+    field += c; i++;
+  }
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+// ----- Date helpers (all dates are yyyy-MM-dd strings, compared lexically) -----
+var MONTHS = { Jan:"01", Feb:"02", Mar:"03", Apr:"04", May:"05", Jun:"06",
+               Jul:"07", Aug:"08", Sep:"09", Oct:"10", Nov:"11", Dec:"12" };
+
+function lotDateToIso(s) { // "Jun-01-2026" -> "2026-06-01"
+  var m = /^([A-Za-z]{3})-(\d{2})-(\d{4})$/.exec(s.trim());
+  if (!m) return null;
+  var mm = MONTHS[m[1][0].toUpperCase() + m[1].slice(1).toLowerCase()];
+  if (!mm) return null;
+  return m[3] + "-" + mm + "-" + m[2];
+}
+
+function prevMonthEnd(iso) { // last day of the month BEFORE the month of iso
+  var y = parseInt(iso.slice(0, 4), 10), mo = parseInt(iso.slice(5, 7), 10);
+  var d = new Date(Date.UTC(y, mo - 1, 0)); // day 0 of (mo-1, 0-based) = last day of prev month
+  return d.toISOString().slice(0, 10);
+}
+
+// ----- On-or-before lookup over a sorted key array -----
+function makeLookup(keys, map) {
+  return function (date) {
+    var lo = 0, hi = keys.length - 1, ans = null;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (keys[mid] <= date) { ans = keys[mid]; lo = mid + 1; }
+      else { hi = mid - 1; }
+    }
+    if (ans === null) throw new Error("No reference data on or before " + date);
+    return map[ans];
+  };
+}
+
+// ----- Reference series, built once after fetch -----
+var TTBR_MAP = {}, CLOSE_MAP = {}, HIGH_MAP = {}, DIVS = [];
+var ttbrKeys, priceKeys, ttbr, closeOf;
+
+function initReferenceData(sbiText, ohlcText, divText) {
+  // SBI USD: DATE, PDF, TT BUY, ...  (date has a time part; TT BUY is col index 2)
+  var sbi = parseCSV(sbiText);
+  for (var i = 1; i < sbi.length; i++) {
+    var c = sbi[i];
+    if (c.length < 3) continue;
+    var dt = c[0].split(/\s+/)[0];
+    var v = parseFloat(c[2]);
+    if (!isNaN(v) && v > 0) TTBR_MAP[dt] = v;
+  }
+  // MSFT OHLC: Date, Close, High
+  var ohlc = parseCSV(ohlcText);
+  for (var j = 1; j < ohlc.length; j++) {
+    var r = ohlc[j];
+    if (r.length < 3 || !r[0]) continue;
+    CLOSE_MAP[r[0]] = parseFloat(r[1]);
+    HIGH_MAP[r[0]] = parseFloat(r[2]);
+  }
+  // Dividends: Period, Type, Ex, Pay, Dps
+  var dv = parseCSV(divText);
+  var h = dv[0].map(function (x) { return x.trim(); });
+  var iEx = h.indexOf("Ex"), iPay = h.indexOf("Pay"), iDps = h.indexOf("Dps");
+  for (var k = 1; k < dv.length; k++) {
+    var d = dv[k];
+    if (!d[iEx]) continue;
+    DIVS.push({ ex: d[iEx].trim(), pay: d[iPay].trim(), dps: parseFloat(d[iDps]) });
+  }
+  ttbrKeys = Object.keys(TTBR_MAP).sort();
+  priceKeys = Object.keys(CLOSE_MAP).sort();
+  if (!ttbrKeys.length || !priceKeys.length || !DIVS.length)
+    throw new Error("Reference data loaded but appears empty.");
+  ttbr = makeLookup(ttbrKeys, TTBR_MAP);
+  closeOf = makeLookup(priceKeys, CLOSE_MAP);
+}
+
+function round(x) { return Math.round(x); }
+function num(x) { return (x == null || x === "") ? NaN : parseFloat(String(x).replace(/,/g, "")); }
+function fmt(n) { return Number(n).toLocaleString("en-IN"); }
+function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
+
+// ----- Core computation (ports Compute-ScheduleFA.ps1) -----
+function compute(lotText, year, nra, basis) {
+  var yStart = year + "-01-01", yEnd = year + "-12-31";
+  var closePrice = closeOf(yEnd), closeRate = ttbr(yEnd);
+
+  // daily High*TTBR within the year, for peak lookups
+  var dailyInr = [];
+  for (var p = 0; p < priceKeys.length; p++) {
+    var d = priceKeys[p];
+    if (d >= yStart && d <= yEnd) dailyInr.push({ date: d, val: HIGH_MAP[d] * ttbr(d) });
+  }
+
+  var rows = parseCSV(lotText);
+  if (!rows.length) throw new Error("The lot CSV appears to be empty.");
+  var header = rows[0].map(function (x) { return x.trim(); });
+  var iDate = header.indexOf("Date acquired");
+  var iQty = header.indexOf("Quantity");
+  var iCbs = header.indexOf("Cost basis/share");
+  var iSrc = header.indexOf("Share source");
+  if (iDate < 0 || iQty < 0 || iCbs < 0 || iSrc < 0)
+    throw new Error("Lot CSV is missing required columns. Expected: 'Date acquired', 'Quantity', " +
+      "'Cost basis/share', 'Share source'.\nFound: " + header.join(", "));
+
+  var results = [], allLots = [], sn = 0;
+  for (var r = 1; r < rows.length; r++) {
+    var lot = rows[r];
+    if (!lot[iDate]) continue;
+    var acq = lotDateToIso(lot[iDate]);
+    if (!acq) continue;
+    var qty = num(lot[iQty]);
+    if (isNaN(qty)) continue;
+    allLots.push({ acq: acq, qty: qty });
+    if (acq > yEnd) continue; // not acquired yet in this period
+
+    var cbShare = num(lot[iCbs]);
+    var source = (lot[iSrc] || "").trim();
+    var fmv = source === "SP" ? closeOf(acq) : cbShare;
+    var acqRate = ttbr(acq);
+    var initial = qty * fmv * acqRate;
+
+    var winStart = acq > yStart ? acq : yStart;
+    var peakUnit = 0;
+    for (var q = 0; q < dailyInr.length; q++)
+      if (dailyInr[q].date >= winStart && dailyInr[q].val > peakUnit) peakUnit = dailyInr[q].val;
+    var peak = qty * peakUnit;
+    var closing = qty * closePrice * closeRate;
+
+    var div = 0;
+    for (var v = 0; v < DIVS.length; v++) {
+      var dv = DIVS[v];
+      if (dv.ex >= yStart && dv.ex <= yEnd && acq <= dv.ex)
+        div += qty * dv.dps * ttbr(prevMonthEnd(dv.pay));
+    }
+    sn++;
+    results.push({
+      sn: sn, acq: acq, qty: Math.round(qty * 1e4) / 1e4, source: source,
+      initial: round(initial), peak: round(peak), closing: round(closing),
+      dividend: round(div), sale: 0
+    });
+  }
+  if (!results.length) throw new Error("No lots acquired on or before " + yEnd + " were found in the file.");
+
+  // ----- Dividend income schedule (Schedule OS / FSI) -----
+  var divStart, divEnd, periodLabel;
+  if (basis === "FY") {
+    divStart = year + "-04-01"; divEnd = (year + 1) + "-03-31";
+    periodLabel = "FY " + year + "-" + String(year + 1).slice(2);
+  } else {
+    divStart = yStart; divEnd = yEnd; periodLabel = "CY " + year;
+  }
+  function sharesHeld(d) { var s = 0; for (var i = 0; i < allLots.length; i++) if (allLots[i].acq <= d) s += allLots[i].qty; return s; }
+  function osQuarter(d) {
+    var key = parseInt(d.slice(5, 7), 10) * 100 + parseInt(d.slice(8, 10), 10);
+    if (key >= 401 && key <= 615) return "Upto 15/6";
+    if (key >= 616 && key <= 915) return "16/6-15/9";
+    if (key >= 916 && key <= 1215) return "16/9-15/12";
+    if (key >= 1216 || key <= 315) return "16/12-15/3";
+    return "16/3-31/3";
+  }
+  var divRows = [];
+  for (var w = 0; w < DIVS.length; w++) {
+    var dd = DIVS[w];
+    if (dd.pay < divStart || dd.pay > divEnd) continue;
+    var sh = sharesHeld(dd.ex);
+    var rate = ttbr(prevMonthEnd(dd.pay));
+    var usd = sh * dd.dps;
+    divRows.push({
+      ex: dd.ex, pay: dd.pay, shares: Math.round(sh * 1e4) / 1e4, dps: dd.dps,
+      usd: Math.round(usd * 100) / 100, rate: rate, inr: round(usd * rate),
+      usTax: round(usd * nra * rate), qtr: osQuarter(dd.pay)
+    });
+  }
+
+  return { results: results, divRows: divRows, year: year, nra: nra,
+           periodLabel: periodLabel, closePrice: closePrice, closeRate: closeRate };
+}
+
+// ----- CSV builders for downloads -----
+function toCsv(headers, rowsOfArrays) {
+  function cell(x) { var s = String(x); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+  return [headers.map(cell).join(",")].concat(rowsOfArrays.map(function (a) { return a.map(cell).join(","); })).join("\r\n") + "\r\n";
+}
+function detailedCsv(res) {
+  return toCsv(["S.No", "Date acquired", "Qty", "Source", "Initial (INR)", "Peak (INR)", "Closing (INR)", "Dividend (INR)", "Sale (INR)"],
+    res.results.map(function (r) { return [r.sn, r.acq, r.qty, r.source, r.initial, r.peak, r.closing, r.dividend, r.sale]; }));
+}
+function itrCsv(res) {
+  return toCsv([
+    "Country/Region name", "Country Name and Code", "Name of entity", "Address of entity", "ZIP Code",
+    "Nature of entity", "Date of acquiring the interest", "Initial value of the investment",
+    "Peak value of investment during the Period", "Closing balance",
+    "Total gross amount paid/credited with respect to the holding during the period",
+    "Total gross proceeds from sale or redemption of investment during the period"],
+    res.results.map(function (r) {
+      return [ENTITY.country, ENTITY.code, ENTITY.name, ENTITY.address, ENTITY.zip, ENTITY.nature,
+        r.acq, r.initial, r.peak, r.closing, r.dividend, r.sale];
+    }));
+}
+function dividendCsv(res) {
+  return toCsv(["Ex", "Pay", "Shares", "Dps", "USD", "Rate", "INR", "UsTaxINR", "Qtr"],
+    res.divRows.map(function (r) { return [r.ex, r.pay, r.shares, r.dps, r.usd, r.rate, r.inr, r.usTax, r.qtr]; }));
+}
+function download(name, text) {
+  var blob = new Blob([text], { type: "text/csv" });
+  var url = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = url; a.download = name; document.body.appendChild(a); a.click();
+  document.body.removeChild(a); setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+}
+
+// ----- Rendering -----
+function sum(arr, key) { return arr.reduce(function (a, x) { return a + x[key]; }, 0); }
+function render(res) {
+  var r = res.results, d = res.divRows;
+  var tInit = sum(r, "initial"), tPeak = sum(r, "peak"), tClose = sum(r, "closing"), tDiv = sum(r, "dividend");
+  var divIncome = sum(d, "inr"), usTax = sum(d, "usTax");
+
+  var h = "";
+  h += "<h2>Table A3 &mdash; Foreign assets (Calendar Year " + res.year + ")</h2>";
+  h += "<p class='small'>Entity: " + esc(ENTITY.name) + ", " + esc(ENTITY.address) + " " + esc(ENTITY.zip) +
+       " (" + esc(ENTITY.country) + ", code " + esc(ENTITY.code) + ", " + esc(ENTITY.nature) + ")<br>" +
+       "Closing: SBI TTBR " + res.closeRate + " on " + res.year + "-12-31 &nbsp;|&nbsp; MSFT close $" + res.closePrice + "</p>";
+  h += "<table><thead><tr><th>S.No</th><th>Date acquired</th><th>Qty</th><th>Source</th>" +
+       "<th>Initial (INR)</th><th>Peak (INR)</th><th>Closing (INR)</th><th>Dividend (INR)</th><th>Sale (INR)</th></tr></thead><tbody>";
+  r.forEach(function (x) {
+    h += "<tr><td>" + x.sn + "</td><td class='l'>" + x.acq + "</td><td>" + x.qty + "</td><td>" + esc(x.source) +
+         "</td><td>" + fmt(x.initial) + "</td><td>" + fmt(x.peak) + "</td><td>" + fmt(x.closing) +
+         "</td><td>" + fmt(x.dividend) + "</td><td>0</td></tr>";
+  });
+  h += "</tbody><tfoot><tr><td colspan='4' class='l'>TOTAL (" + r.length + " lots)</td><td>" + fmt(tInit) +
+       "</td><td>" + fmt(tPeak) + "</td><td>" + fmt(tClose) + "</td><td>" + fmt(tDiv) + "</td><td>0</td></tr></tfoot></table>";
+
+  h += "<div class='dl'>" +
+       "<button class='sec' data-dl='itr'>Download ITR-2 A3 import CSV</button>" +
+       "<button class='sec' data-dl='detailed'>Download detailed A3 CSV</button>" +
+       "<button class='sec' data-dl='div'>Download dividend schedule CSV</button></div>";
+
+  h += "<h2>Schedule OS / FSI &mdash; Foreign dividend income (" + esc(res.periodLabel) + ")</h2>";
+  h += "<table><thead><tr><th>Ex-date</th><th>Pay-date</th><th>Shares</th><th>DPS (USD)</th><th>Gross (USD)</th>" +
+       "<th>SBI rate</th><th>Income (INR)</th><th>US tax withheld (INR)</th><th>ITR OS quarter</th></tr></thead><tbody>";
+  d.forEach(function (x) {
+    h += "<tr><td class='l'>" + x.ex + "</td><td class='l'>" + x.pay + "</td><td>" + x.shares + "</td><td>" + x.dps +
+         "</td><td>" + x.usd + "</td><td>" + x.rate + "</td><td>" + fmt(x.inr) + "</td><td>" + fmt(x.usTax) +
+         "</td><td class='l'>" + esc(x.qtr) + "</td></tr>";
+  });
+  h += "</tbody><tfoot><tr><td colspan='6' class='l'>Total</td><td>" + fmt(divIncome) + "</td><td>" + fmt(usTax) + "</td><td></td></tr></tfoot></table>";
+  h += "<p class='small'>US tax withheld (NRA, " + Math.round(res.nra * 100) + "% treaty rate): INR " + fmt(usTax) +
+       " &mdash; claim DTAA relief via Form 67 (Schedule FSI / TR).</p>";
+
+  var out = document.getElementById("results");
+  out.innerHTML = h;
+  out.querySelector("[data-dl='itr']").onclick = function () { download("ScheduleFA_A3_ITR_CY" + res.year + ".csv", itrCsv(res)); };
+  out.querySelector("[data-dl='detailed']").onclick = function () { download("ScheduleFA_A3_CY" + res.year + ".csv", detailedCsv(res)); };
+  out.querySelector("[data-dl='div']").onclick = function () { download("ScheduleFA_Dividends_CY" + res.year + ".csv", dividendCsv(res)); };
+}
+
+// ----- Wire up UI -----
+var yEl = document.getElementById("year");
+yEl.value = new Date().getFullYear() - 1; // default: last completed calendar year
+
+function runCompute() {
+  var errEl = document.getElementById("error"), stEl = document.getElementById("status");
+  errEl.textContent = ""; document.getElementById("results").innerHTML = "";
+  var file = document.getElementById("lotFile").files[0];
+  if (!file) { errEl.textContent = "Please choose your Fidelity lot CSV first."; return; }
+  var year = parseInt(yEl.value, 10);
+  var nra = parseFloat(document.getElementById("nra").value);
+  var basis = document.querySelector("input[name=basis]:checked").value;
+  if (isNaN(year)) { errEl.textContent = "Enter a valid calendar year."; return; }
+  if (isNaN(nra) || nra < 0 || nra > 1) { errEl.textContent = "NRA rate must be between 0 and 1."; return; }
+
+  var reader = new FileReader();
+  reader.onload = function () {
+    try {
+      var res = compute(reader.result, year, nra, basis);
+      render(res);
+      stEl.textContent = "Computed " + res.results.length + " lot(s) for CY" + year + ".";
+    } catch (e) { errEl.textContent = "Error: " + e.message; }
+  };
+  reader.onerror = function () { errEl.textContent = "Could not read the file."; };
+  reader.readAsText(file);
+}
+
+document.getElementById("go").addEventListener("click", runCompute);
+
+// ----- Load the reference snapshot once, then enable the app -----
+(function loadData() {
+  var stEl = document.getElementById("status"), errEl = document.getElementById("error");
+  function get(name) {
+    return fetch(DATA_BASE + name, { cache: "force-cache" }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status + " for " + name);
+      return r.text();
+    });
+  }
+  Promise.all([get("SBI_USD.csv"), get("MSFT_ohlc.csv"), get("MSFT_Dividends.csv")])
+    .then(function (t) {
+      initReferenceData(t[0], t[1], t[2]);
+      document.getElementById("go").disabled = false;
+      var maxDate = priceKeys[priceKeys.length - 1] + " (prices), " + ttbrKeys[ttbrKeys.length - 1] + " (SBI rates)";
+      stEl.textContent = "Reference data loaded. Choose your lot CSV and click Compute.";
+      document.getElementById("footer").textContent =
+        "Data snapshot covers up to " + maxDate + ". This is filing assistance, not professional tax advice \u2014 verify with your CA before filing.";
+    })
+    .catch(function (e) {
+      stEl.textContent = "";
+      errEl.textContent = "Failed to load reference data: " + e.message +
+        "\nIf you opened this file directly (file://), serve it over HTTP instead (browsers block local fetch).";
+    });
+})();
+</script>
+</body>
+</html>
