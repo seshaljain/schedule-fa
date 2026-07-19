@@ -27,7 +27,7 @@ bulk-import columns (in order) are:
 | 1 | Country/Region name | `UNITED STATES` |
 | 2 | Country Name and Code | `2` |
 | 3 | Name of entity | `Microsoft Corporation` |
-| 4 | Address of entity | `One Microsoft Way, Redmond, Washington` |
+| 4 | Address of entity | `One Microsoft Way Redmond Washington` |
 | 5 | ZIP Code | `98052` |
 | 6 | Nature of entity | `Listed` |
 | 7 | Date of acquiring the interest | acquisition date (`yyyy-MM-dd`) |
@@ -48,11 +48,11 @@ discloses the underlying equity lots). Official ITR-2 A2 bulk-import columns:
 | 1 | Country/Region name | `UNITED STATES` |
 | 2 | Country Name and Code | `2` |
 | 3 | Name of financial institution in which the account is held | `Fidelity Stock Plan Services Participant Trust / Fidelity Personal Trust Company` |
-| 4 | Address of financial institution | `245 Summer Street, Boston, Massachusetts` |
+| 4 | Address of financial institution | `245 Summer Street Boston Massachusetts` |
 | 5 | ZIP Code | `02210` |
 | 6 | Account number | `[input_value_here]` |
 | 7 | Status | `Beneficiary` |
-| 8 | Account opening date | `[input_value_here]` |
+| 8 | Account opening date | `[yyyy-mm-dd]` |
 | 9 | Peak balance during the period | `max_d ( shares_held(d) × High(d) × TTBR(d) )` (INR) |
 | 10 | Closing balance | `shares_held(31-Dec) × Close(31-Dec) × TTBR(31-Dec)` (INR) |
 | 11 | Gross amount paid/credited to the account during the period | sum of CY dividends across all lots (INR) |
@@ -61,10 +61,10 @@ Rows 3–5 and 7 are pre‑filled for **Microsoft India employees holding MSFT
 RSU/ESPP through Fidelity Stock Plan Services** (the standard employer
 custodial arrangement — employees are beneficiaries of the Fidelity Personal
 Trust Company plan trust that holds the shares). Only rows 6 and 8 (Account
-Number and Account Opening Date) remain as `[input_value_here]` — fill these
-in the CSV before uploading, or edit the constants block in the script /
-`ENTITY.a2` object in the webapp. If your custodian is not Fidelity Stock Plan
-Services, edit rows 3–5 and 7 as well. A2 Peak is the account-level daily
+Number and Account Opening Date) remain as `[input_value_here]` / `[yyyy-mm-dd]` —
+fill these in the CSV before uploading, or edit the constants block in the
+script / `ENTITY.a2` object in the webapp. If your custodian is not Fidelity
+Stock Plan Services, edit rows 3–5 and 7 as well. A2 Peak is the account-level daily
 maximum, which is bounded above by the sum of A3 per-lot peaks (different lots
 peak on different days). A2 Closing and A2 Amount-paid are exact sums of the A3
 per-lot values. The script writes these as `ScheduleFA_A2_ITR_<CY>.csv` (single row).
@@ -80,10 +80,11 @@ per-lot values. The script writes these as `ScheduleFA_A2_ITR_<CY>.csv` (single 
 > **Microsoft India defaults.** Entity metadata (Table A3) is pre‑filled with
 > Microsoft Corporation, and custodian metadata (Table A2) is pre‑filled with
 > Fidelity Stock Plan Services Participant Trust / Fidelity Personal Trust
-> Company (245 Summer Street, Boston MA 02210, `Beneficiary` status) — this is
+> Company (245 Summer Street Boston MA 02210, `Beneficiary` status) — this is
 > the standard employer arrangement for Microsoft India RSU/ESPP grants. Only
 > the taxpayer's own Account Number and Account Opening Date remain as
-> `[input_value_here]` placeholders. For a different employer or custodian,
+> `[input_value_here]` / `[yyyy-mm-dd]` placeholders. For a different employer
+> or custodian,
 > edit the entity constants (top of `Compute-ScheduleFA.ps1`) or the `ENTITY`
 > object (top of `webapp/index.html`) before running.
 
@@ -97,7 +98,7 @@ per-lot values. The script writes these as `ScheduleFA_A2_ITR_<CY>.csv` (single 
    `Cost basis/share`, `Value`, `Gain/loss`, `Grant date`,
    `Share source` (**`DO`** = RSU/stock award, **`SP`** = ESPP), `Holding period`.
 2. **Ticker** and the **entity's legal name/address** for the A3 form
-   (e.g. Microsoft Corporation, One Microsoft Way, Redmond, WA 98052 — a listed
+   (e.g. Microsoft Corporation, One Microsoft Way Redmond WA 98052 — a listed
    company). For a different employer, substitute the ticker and adjust the
    dividend + price sources below.
 3. **Filing year** (the calendar year for A3; FY is derived as that year's Apr →

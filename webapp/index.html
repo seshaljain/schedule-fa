@@ -85,20 +85,20 @@ var ENTITY = {
   country: "UNITED STATES",
   code: "2",
   name: "Microsoft Corporation",
-  address: "One Microsoft Way, Redmond, Washington",
+  address: "One Microsoft Way Redmond Washington",
   zip: "98052",
   nature: "Listed",
   // ----- Table A2 (Foreign Custodial Account) defaults -----
   // Pre-filled for Microsoft India employees holding MSFT RSU/ESPP via Fidelity
-  // Stock Plan Services. Account Number and Opening Date are per-user, so left
-  // as [input_value_here]. Edit this block if your custodian is different.
+  // Stock Plan Services. Account Number and Opening Date are per-user
+  // placeholders. Edit this block if your custodian is different.
   a2: {
     institutionName: "Fidelity Stock Plan Services Participant Trust / Fidelity Personal Trust Company",
-    institutionAddress: "245 Summer Street, Boston, Massachusetts",
+    institutionAddress: "245 Summer Street Boston Massachusetts",
     zip: "02210",
     accountNumber: "[input_value_here]",
     status: "Beneficiary",
-    openingDate: "[input_value_here]"
+    openingDate: "[yyyy-mm-dd]"
   }
 };
 
@@ -367,7 +367,7 @@ function render(res) {
 
   var h = "";
   h += "<h2>Table A2 &mdash; Foreign custodial account (Calendar Year " + res.year + ")</h2>";
-  h += "<p class='small'>Pre&#8209;filled for Microsoft India employees holding MSFT RSU/ESPP through Fidelity Stock Plan Services. Fill in <code>[input_value_here]</code> for your <b>Account Number</b> and <b>Account Opening Date</b> before uploading. If your custodian is different, edit the <code>ENTITY.a2</code> block in this file.</p>";
+  h += "<p class='small'>Pre&#8209;filled for Microsoft India employees holding MSFT RSU/ESPP through Fidelity Stock Plan Services. Fill in <code>[input_value_here]</code> and <code>[yyyy-mm-dd]</code> for your <b>Account Number</b> and <b>Account Opening Date</b> before uploading. If your custodian is different, edit the <code>ENTITY.a2</code> block in this file.</p>";
   h += "<table><thead><tr><th class='l'>Field</th><th class='l'>Value</th></tr></thead><tbody>" +
        "<tr><td class='l'>Country/Region name</td><td class='l'>" + esc(ENTITY.country) + "</td></tr>" +
        "<tr><td class='l'>Country Name and Code</td><td class='l'>" + esc(ENTITY.code) + "</td></tr>" +

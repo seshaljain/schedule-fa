@@ -110,7 +110,7 @@ Key subtleties:
   (Fidelity), with Peak balance / Closing balance / Amount paid computed at the
   account level (CY basis). Custodian name / address / ZIP / status are
   pre‑filled for **Fidelity Stock Plan Services Participant Trust / Fidelity
-  Personal Trust Company** (245 Summer Street, Boston MA 02210, `Beneficiary`).
+  Personal Trust Company** (245 Summer Street Boston MA 02210, `Beneficiary`).
   Only Account Number and Account Opening Date remain as `[input_value_here]`.
 - **Table A3 — Foreign Equity & Debt Interest**: this is the correct place for
   listed foreign shares — one row per lot with Initial / Peak / Closing /

@@ -89,7 +89,7 @@ $Dividends = Import-Csv $dividendFile | ForEach-Object {
 $EntityCountry     = 'UNITED STATES'
 $EntityCountryCode = '2'
 $EntityName        = 'Microsoft Corporation'
-$EntityAddress     = 'One Microsoft Way, Redmond, Washington'
+$EntityAddress     = 'One Microsoft Way Redmond Washington'
 $EntityZip         = '98052'
 $EntityNature      = 'Listed'
 
@@ -98,16 +98,16 @@ $EntityNature      = 'Listed'
 # Pre-filled for the common case: Microsoft India employees holding MSFT
 # RSU/ESPP shares through Fidelity Stock Plan Services (custodian = Fidelity
 # Personal Trust Company, participant = beneficiary of the plan trust).
-# Account Number and Opening Date are per-user, so left as [input_value_here].
+# Account Number and Opening Date are per-user placeholders.
 # If your custodian is different, edit these constants accordingly.
 # Only the three monetary A2 columns (Peak / Closing / Amount paid) are computed.
 # ---------------------------------------------------------------------------
 $A2InstitutionName    = 'Fidelity Stock Plan Services Participant Trust / Fidelity Personal Trust Company'
-$A2InstitutionAddress = '245 Summer Street, Boston, Massachusetts'
+$A2InstitutionAddress = '245 Summer Street Boston Massachusetts'
 $A2Zip                = '02210'
 $A2AccountNumber      = '[input_value_here]'
 $A2Status             = 'Beneficiary'
-$A2OpeningDate        = '[input_value_here]'
+$A2OpeningDate        = '[yyyy-mm-dd]'
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -345,7 +345,7 @@ Write-Host "Schedule FA - Table A2 : Foreign custodial account - Calendar Year $
 Write-Host ("  Peak balance    : INR {0:N0}" -f $a2Peak)
 Write-Host ("  Closing balance : INR {0:N0}" -f $a2Closing)
 Write-Host ("  Amount paid     : INR {0:N0}" -f $a2Dividend)
-Write-Host "  NOTE: replace [input_value_here] cells in $a2Out before uploading." -ForegroundColor Yellow
+Write-Host "  NOTE: fill in [input_value_here] and [yyyy-mm-dd] cells in $a2Out before uploading." -ForegroundColor Yellow
 Write-Host "Written: $a2Out  (ITR-2 A2 import format)" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
@@ -434,7 +434,7 @@ tfoot td{font-weight:bold;background:#f7f9fc}
 Closing rate: SBI TTBR $closeRate on $yEnd &nbsp;|&nbsp; MSFT close `$$closePrice<br>
 Values converted using SBI TT Buy Rate. Asset values use the actual-date rate; dividends use Rule 128 (last day of the month preceding the pay date).</p>
 <h2>Table A2 - Details of foreign custodial account</h2>
-<p class='small'>User-identifying fields are hardcoded placeholders - replace [input_value_here] with your custodian's details before uploading.</p>
+<p class='small'>User-identifying fields are hardcoded placeholders - fill [input_value_here] and [yyyy-mm-dd] with your custodian's details before uploading.</p>
 <table><thead><tr>
 <th class='l'>Field</th><th class='l'>Value</th></tr></thead><tbody>
 <tr><td class='l'>Country/Region name</td><td class='l'>$EntityCountry</td></tr>
