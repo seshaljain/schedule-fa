@@ -32,10 +32,17 @@
 </style>
 </head>
 <body>
-<h1>Schedule FA Calculator &mdash; ITR-2 (Table A3)</h1>
-<p class="sub">Computes Initial / Peak / Closing / Dividend (INR) for Microsoft (MSFT) shares held via
-Fidelity, using the SBI TT-buy-rate methodology. The reference-rate snapshot loads once from this
-site; your lot file is read locally and never uploaded, and no further network calls are made.</p>
+ <h1>Schedule FA Calculator &mdash; ITR-2 for Microsoft India Employees with Broker: Fidelity</h1>
+ <p class="sub">Computes Schedule FA <b>Table A2</b>
+ (custodial account) and <b>Table A3</b> (per lot: Initial / Peak / Closing /
+ Dividend, INR) for Microsoft (MSFT) shares held via Fidelity, using the SBI
+ TT&#8209;buy&#8209;rate methodology. Pre&#8209;filled for <b>Microsoft India
+ employees</b> (MSFT RSU/ESPP through Fidelity Stock Plan Services) &mdash; only
+ your <b>Account Number</b> and <b>Account Opening Date</b> need to be filled
+ into the A2 CSV before uploading. The reference&#8209;rate snapshot loads once
+ from this site; your lot file is read locally and never uploaded, and no
+ further network calls are made. Not tax advice &mdash; verify with a CA before
+ filing.</p>
 
 <fieldset>
   <legend>Inputs</legend>
@@ -80,7 +87,19 @@ var ENTITY = {
   name: "Microsoft Corporation",
   address: "One Microsoft Way, Redmond, Washington",
   zip: "98052",
-  nature: "Listed"
+  nature: "Listed",
+  // ----- Table A2 (Foreign Custodial Account) defaults -----
+  // Pre-filled for Microsoft India employees holding MSFT RSU/ESPP via Fidelity
+  // Stock Plan Services. Account Number and Opening Date are per-user, so left
+  // as [input_value_here]. Edit this block if your custodian is different.
+  a2: {
+    institutionName: "Fidelity Stock Plan Services Participant Trust / Fidelity Personal Trust Company",
+    institutionAddress: "245 Summer Street, Boston, Massachusetts",
+    zip: "02210",
+    accountNumber: "[input_value_here]",
+    status: "Beneficiary",
+    openingDate: "[input_value_here]"
+  }
 };
 
 // ----- Minimal quote-aware CSV parser -> array of string arrays -----
@@ -274,8 +293,24 @@ function compute(lotText, year, nra, basis) {
     });
   }
 
+  // ----- Table A2 aggregates (account-level, CY basis) -----
+  // Closing / Dividend are exact sums of A3 per-lot values (same reporting day
+  // for closing; CY dividends already summed per-lot). Peak is the account-
+  // level daily maximum, bounded above by the sum of per-lot peaks because
+  // different lots peak on different days.
+  var a2Closing = sum(results, "closing");
+  var a2Dividend = sum(results, "dividend");
+  var a2PeakUnit = 0;
+  for (var ii = 0; ii < dailyInr.length; ii++) {
+    var e = dailyInr[ii], shd = 0;
+    for (var jj = 0; jj < allLots.length; jj++) if (allLots[jj].acq <= e.date) shd += allLots[jj].qty;
+    var val = shd * e.val;
+    if (val > a2PeakUnit) a2PeakUnit = val;
+  }
+  var a2 = { peak: round(a2PeakUnit), closing: a2Closing, dividend: a2Dividend };
+
   return { results: results, divRows: divRows, year: year, nra: nra,
-           periodLabel: periodLabel, closePrice: closePrice, closeRate: closeRate };
+           periodLabel: periodLabel, closePrice: closePrice, closeRate: closeRate, a2: a2 };
 }
 
 // ----- CSV builders for downloads -----
@@ -299,6 +334,19 @@ function itrCsv(res) {
         r.acq, r.initial, r.peak, r.closing, r.dividend, r.sale];
     }));
 }
+function itrA2Csv(res) {
+  var a = ENTITY.a2;
+  return toCsv([
+    "Country/Region name", "Country Name and Code",
+    "Name of financial institution in which the account is held",
+    "Address of financial institution", "ZIP Code", "Account number",
+    "Status", "Account opening date",
+    "Peak balance during the period", "Closing balance",
+    "Gross amount paid/credited to the account during the period"],
+    [[ENTITY.country, ENTITY.code, a.institutionName, a.institutionAddress, a.zip,
+      a.accountNumber, a.status, a.openingDate,
+      res.a2.peak, res.a2.closing, res.a2.dividend]]);
+}
 function dividendCsv(res) {
   return toCsv(["Ex", "Pay", "Shares", "Dps", "USD", "Rate", "INR", "UsTaxINR", "Qtr"],
     res.divRows.map(function (r) { return [r.ex, r.pay, r.shares, r.dps, r.usd, r.rate, r.inr, r.usTax, r.qtr]; }));
@@ -318,6 +366,23 @@ function render(res) {
   var divIncome = sum(d, "inr"), usTax = sum(d, "usTax");
 
   var h = "";
+  h += "<h2>Table A2 &mdash; Foreign custodial account (Calendar Year " + res.year + ")</h2>";
+  h += "<p class='small'>Pre&#8209;filled for Microsoft India employees holding MSFT RSU/ESPP through Fidelity Stock Plan Services. Fill in <code>[input_value_here]</code> for your <b>Account Number</b> and <b>Account Opening Date</b> before uploading. If your custodian is different, edit the <code>ENTITY.a2</code> block in this file.</p>";
+  h += "<table><thead><tr><th class='l'>Field</th><th class='l'>Value</th></tr></thead><tbody>" +
+       "<tr><td class='l'>Country/Region name</td><td class='l'>" + esc(ENTITY.country) + "</td></tr>" +
+       "<tr><td class='l'>Country Name and Code</td><td class='l'>" + esc(ENTITY.code) + "</td></tr>" +
+       "<tr><td class='l'>Name of financial institution</td><td class='l'>" + esc(ENTITY.a2.institutionName) + "</td></tr>" +
+       "<tr><td class='l'>Address of financial institution</td><td class='l'>" + esc(ENTITY.a2.institutionAddress) + "</td></tr>" +
+       "<tr><td class='l'>ZIP Code</td><td class='l'>" + esc(ENTITY.a2.zip) + "</td></tr>" +
+       "<tr><td class='l'>Account number</td><td class='l'>" + esc(ENTITY.a2.accountNumber) + "</td></tr>" +
+       "<tr><td class='l'>Status</td><td class='l'>" + esc(ENTITY.a2.status) + "</td></tr>" +
+       "<tr><td class='l'>Account opening date</td><td class='l'>" + esc(ENTITY.a2.openingDate) + "</td></tr>" +
+       "<tr><td class='l'>Peak balance during the period (INR)</td><td>" + fmt(res.a2.peak) + "</td></tr>" +
+       "<tr><td class='l'>Closing balance (INR)</td><td>" + fmt(res.a2.closing) + "</td></tr>" +
+       "<tr><td class='l'>Gross amount paid/credited (INR)</td><td>" + fmt(res.a2.dividend) + "</td></tr>" +
+       "</tbody></table>";
+  h += "<div class='dl'><button class='sec' data-dl='itrA2'>Download ITR-2 A2 import CSV</button></div>";
+
   h += "<h2>Table A3 &mdash; Foreign assets (Calendar Year " + res.year + ")</h2>";
   h += "<p class='small'>Entity: " + esc(ENTITY.name) + ", " + esc(ENTITY.address) + " " + esc(ENTITY.zip) +
        " (" + esc(ENTITY.country) + ", code " + esc(ENTITY.code) + ", " + esc(ENTITY.nature) + ")<br>" +
@@ -334,8 +399,7 @@ function render(res) {
 
   h += "<div class='dl'>" +
        "<button class='sec' data-dl='itr'>Download ITR-2 A3 import CSV</button>" +
-       "<button class='sec' data-dl='detailed'>Download detailed A3 CSV</button>" +
-       "<button class='sec' data-dl='div'>Download dividend schedule CSV</button></div>";
+       "<button class='sec' data-dl='detailed'>Download detailed A3 CSV</button></div>";
 
   h += "<h2>Schedule OS / FSI &mdash; Foreign dividend income (" + esc(res.periodLabel) + ")</h2>";
   h += "<table><thead><tr><th>Ex-date</th><th>Pay-date</th><th>Shares</th><th>DPS (USD)</th><th>Gross (USD)</th>" +
@@ -348,9 +412,11 @@ function render(res) {
   h += "</tbody><tfoot><tr><td colspan='6' class='l'>Total</td><td>" + fmt(divIncome) + "</td><td>" + fmt(usTax) + "</td><td></td></tr></tfoot></table>";
   h += "<p class='small'>US tax withheld (NRA, " + Math.round(res.nra * 100) + "% treaty rate): INR " + fmt(usTax) +
        " &mdash; claim DTAA relief via Form 67 (Schedule FSI / TR).</p>";
+  h += "<div class='dl'><button class='sec' data-dl='div'>Download dividend schedule CSV</button></div>";
 
   var out = document.getElementById("results");
   out.innerHTML = h;
+  out.querySelector("[data-dl='itrA2']").onclick = function () { download("ScheduleFA_A2_ITR_CY" + res.year + ".csv", itrA2Csv(res)); };
   out.querySelector("[data-dl='itr']").onclick = function () { download("ScheduleFA_A3_ITR_CY" + res.year + ".csv", itrCsv(res)); };
   out.querySelector("[data-dl='detailed']").onclick = function () { download("ScheduleFA_A3_CY" + res.year + ".csv", detailedCsv(res)); };
   out.querySelector("[data-dl='div']").onclick = function () { download("ScheduleFA_Dividends_CY" + res.year + ".csv", dividendCsv(res)); };

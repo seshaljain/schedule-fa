@@ -1,11 +1,23 @@
 # Schedule FA — Foreign Assets filing helper
 
 Compute India **ITR‑2 "Schedule FA"** (foreign assets) plus the matching foreign
-**dividend income** and **foreign tax credit** for US shares held via a broker
-(built for **Microsoft RSUs/ESPP via Fidelity**, adaptable to any US equity).
+**dividend income** and **foreign tax credit** for US shares held via a broker.
+Built and pre‑filled for the **Microsoft India** employee case (MSFT RSU / ESPP
+held through **Fidelity Stock Plan Services**); the entity and custodian
+constants at the top of the script / webapp are the only edits needed to adapt
+it to any other US equity or custodian.
 
 > ⚠️ **Not tax advice.** This automates a defensible, validated methodology. Verify
 > the output with a CA before filing.
+>
+> ⚠️ **Microsoft India specific defaults.** Table A2 is pre‑filled with the
+> Fidelity Stock Plan Services custodian details (address, ZIP, `Beneficiary`
+> status) and Table A3 with Microsoft Corporation entity details. **Only your
+> Account Number and Account Opening Date remain as `[input_value_here]`
+> placeholders.** If you hold shares of a different company, or through a
+> different custodian, edit the entity / A2 constants at the top of
+> [`Compute-ScheduleFA.ps1`](./Compute-ScheduleFA.ps1) (or the `ENTITY` object
+> in [`webapp/index.html`](./webapp/index.html)) before running.
 
 ---
 
@@ -20,9 +32,17 @@ Compute India **ITR‑2 "Schedule FA"** (foreign assets) plus the matching forei
    per lot (Initial / Peak / Closing / Dividend, INR), the FY dividend total, and
    the US tax withheld. `ScheduleFA_A3_ITR_CY2025.csv` is the same data in the
    official ITR‑2 A3 bulk‑import column order, ready to upload on the portal.
+   `ScheduleFA_A2_ITR_CY2025.csv` is a single‑row Table A2 (custodial account)
+   pre‑filled with the Fidelity Stock Plan Services custodian details — fill in
+   only your **Account Number** and **Account Opening Date** (the two
+   `[input_value_here]` cells) before uploading.
 4. **Validate** against last year's known‑good numbers and your broker's year‑end
    statement (see the script's regression check).
 5. **File on the ITR portal**:
+   - **Schedule FA → Table A2** — one row for the custodial account. Upload
+     `ScheduleFA_A2_ITR_CY2025.csv` after filling in the two `[input_value_here]`
+     cells (Account Number + Account Opening Date). The custodian's name,
+     address, ZIP and status are pre‑filled for Fidelity Stock Plan Services.
    - **Schedule FA → Table A3** — one row per lot: Initial / Peak / Closing /
      Dividend (INR). Upload `ScheduleFA_A3_ITR_CY2025.csv` or enter each row
      manually.
@@ -86,9 +106,15 @@ Key subtleties:
 
 ## Where it goes on the ITR
 
+- **Table A2 — Foreign Custodial Account**: one row disclosing the *account*
+  (Fidelity), with Peak balance / Closing balance / Amount paid computed at the
+  account level (CY basis). Custodian name / address / ZIP / status are
+  pre‑filled for **Fidelity Stock Plan Services Participant Trust / Fidelity
+  Personal Trust Company** (245 Summer Street, Boston MA 02210, `Beneficiary`).
+  Only Account Number and Account Opening Date remain as `[input_value_here]`.
 - **Table A3 — Foreign Equity & Debt Interest**: this is the correct place for
-  listed foreign shares. Reporting them only under Section B (financial interest)
-  or A2 (custodial account) omits the required Peak/Closing values.
+  listed foreign shares — one row per lot with Initial / Peak / Closing /
+  Dividend.
 - **Schedule OS**: foreign dividends add to "Dividend income".
 - **Schedule FSI / TR + Form 67**: claim the US withholding as DTAA relief
   (section 90). **Form 67 must be filed before/with the return** for the credit.

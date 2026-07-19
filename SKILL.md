@@ -14,9 +14,10 @@ description: >-
 ## What this skill does
 
 For an Indian tax resident holding US-listed shares (RSU / ESPP / direct), it
-computes everything needed to file **Schedule FA (Table A3)** of ITR-2 for a given
-**calendar year**, plus the matching **foreign dividend income (Schedule OS/FSI)**
-and **foreign tax credit (Schedule TR / Form 67)** on a **financial-year** basis.
+computes everything needed to file **Schedule FA (Table A2 + Table A3)** of ITR-2
+for a given **calendar year**, plus the matching **foreign dividend income
+(Schedule OS/FSI)** and **foreign tax credit (Schedule TR / Form 67)** on a
+**financial-year** basis.
 
 Per lot it produces one **Schedule FA Table A3** row. The official ITR-2 A3
 bulk-import columns (in order) are:
@@ -38,6 +39,36 @@ bulk-import columns (in order) are:
 
 The script writes these directly as `ScheduleFA_A3_ITR_<CY>.csv`, ready to upload.
 
+It also produces a single **Schedule FA Table A2** row disclosing the *custodial
+account* (the brokerage) — file A2 **and** A3 (A2 discloses the account, A3
+discloses the underlying equity lots). Official ITR-2 A2 bulk-import columns:
+
+| # | A2 column | Value |
+|---|---|---|
+| 1 | Country/Region name | `UNITED STATES` |
+| 2 | Country Name and Code | `2` |
+| 3 | Name of financial institution in which the account is held | `Fidelity Stock Plan Services Participant Trust / Fidelity Personal Trust Company` |
+| 4 | Address of financial institution | `245 Summer Street, Boston, Massachusetts` |
+| 5 | ZIP Code | `02210` |
+| 6 | Account number | `[input_value_here]` |
+| 7 | Status | `Beneficiary` |
+| 8 | Account opening date | `[input_value_here]` |
+| 9 | Peak balance during the period | `max_d ( shares_held(d) × High(d) × TTBR(d) )` (INR) |
+| 10 | Closing balance | `shares_held(31-Dec) × Close(31-Dec) × TTBR(31-Dec)` (INR) |
+| 11 | Gross amount paid/credited to the account during the period | sum of CY dividends across all lots (INR) |
+
+Rows 3–5 and 7 are pre‑filled for **Microsoft India employees holding MSFT
+RSU/ESPP through Fidelity Stock Plan Services** (the standard employer
+custodial arrangement — employees are beneficiaries of the Fidelity Personal
+Trust Company plan trust that holds the shares). Only rows 6 and 8 (Account
+Number and Account Opening Date) remain as `[input_value_here]` — fill these
+in the CSV before uploading, or edit the constants block in the script /
+`ENTITY.a2` object in the webapp. If your custodian is not Fidelity Stock Plan
+Services, edit rows 3–5 and 7 as well. A2 Peak is the account-level daily
+maximum, which is bounded above by the sum of A3 per-lot peaks (different lots
+peak on different days). A2 Closing and A2 Amount-paid are exact sums of the A3
+per-lot values. The script writes these as `ScheduleFA_A2_ITR_<CY>.csv` (single row).
+
 > **Important scope note.** Schedule FA Table A3 is reported for the **calendar
 > year** (1 Jan – 31 Dec). Dividend *income* in Schedule OS and the foreign tax
 > credit in Schedule FSI/TR are reported for the Indian **financial year**
@@ -45,6 +76,16 @@ The script writes these directly as `ScheduleFA_A3_ITR_<CY>.csv`, ready to uploa
 
 > **Not tax advice.** This automates a defensible methodology validated against a
 > prior known-good filing. The taxpayer must verify with a CA.
+
+> **Microsoft India defaults.** Entity metadata (Table A3) is pre‑filled with
+> Microsoft Corporation, and custodian metadata (Table A2) is pre‑filled with
+> Fidelity Stock Plan Services Participant Trust / Fidelity Personal Trust
+> Company (245 Summer Street, Boston MA 02210, `Beneficiary` status) — this is
+> the standard employer arrangement for Microsoft India RSU/ESPP grants. Only
+> the taxpayer's own Account Number and Account Opening Date remain as
+> `[input_value_here]` placeholders. For a different employer or custodian,
+> edit the entity constants (top of `Compute-ScheduleFA.ps1`) or the `ENTITY`
+> object (top of `webapp/index.html`) before running.
 
 ---
 
@@ -226,9 +267,10 @@ Before trusting a year's output, **reproduce a known-good prior year**:
   cost basis.
 - **Peak** — daily **High** (not close), max of the INR product, window clamped to
   1 Jan of the year.
-- **Placement on the form** — listed foreign shares belong in **Table A3 (Foreign
-  Equity & Debt Interest)**. Reporting them only under Section B (Financial
-  Interest) or A2 (Custodial Account) omits the required Peak/Closing values.
+- **Placement on the form** — file **both** Table A2 (Custodial Account — one row
+  for the brokerage account) **and** Table A3 (one row per equity lot). A2 is
+  where the custodial account itself is disclosed; A3 is where the per-lot
+  Initial / Peak / Closing / Dividend figures live. 
 - **Split-adjusted prices** — only relevant for pre-2003 MSFT dates; ignore for any
   realistic current-employee lot.
 

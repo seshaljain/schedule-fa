@@ -94,6 +94,22 @@ $EntityZip         = '98052'
 $EntityNature      = 'Listed'
 
 # ---------------------------------------------------------------------------
+# Table A2 (Foreign Custodial Account) defaults.
+# Pre-filled for the common case: Microsoft India employees holding MSFT
+# RSU/ESPP shares through Fidelity Stock Plan Services (custodian = Fidelity
+# Personal Trust Company, participant = beneficiary of the plan trust).
+# Account Number and Opening Date are per-user, so left as [input_value_here].
+# If your custodian is different, edit these constants accordingly.
+# Only the three monetary A2 columns (Peak / Closing / Amount paid) are computed.
+# ---------------------------------------------------------------------------
+$A2InstitutionName    = 'Fidelity Stock Plan Services Participant Trust / Fidelity Personal Trust Company'
+$A2InstitutionAddress = '245 Summer Street, Boston, Massachusetts'
+$A2Zip                = '02210'
+$A2AccountNumber      = '[input_value_here]'
+$A2Status             = 'Beneficiary'
+$A2OpeningDate        = '[input_value_here]'
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 function Get-OnOrBefore {
@@ -280,6 +296,59 @@ $itrRows | Export-Csv -Path $itrOut -NoTypeInformation
 Write-Host "Written: $itrOut  (ITR-2 A3 import format)" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
+# Table A2 - Foreign custodial account (aggregate over all lots, CY basis).
+# Same reporting window as A3 (calendar year). Closing/Amount-paid are exact
+# sums of A3 per-lot values (same reporting day; identity under CY dividends).
+# Peak is the account-level daily maximum: max_d in [1-Jan..31-Dec] of
+#     shares_held(d) * High(d) * TTBR(d).
+# This is bounded above by the sum of per-lot peaks (lots peak on different
+# days). User-identifying fields are hardcoded [input_value_here] placeholders.
+# ---------------------------------------------------------------------------
+# Hoist $allLots so both A2 (peak) and the dividend section reuse the same list.
+$allLots = @(Import-Csv $LotCsv | Where-Object { $_.'Date acquired' -match '^[A-Za-z]{3}-\d{2}-\d{4}$' } |
+    ForEach-Object {
+        [pscustomobject]@{
+            Acq = [datetime]::ParseExact($_.'Date acquired','MMM-dd-yyyy',[System.Globalization.CultureInfo]::InvariantCulture).ToString('yyyy-MM-dd')
+            Qty = [double]$_.Quantity
+        }
+    })
+function SharesHeld([string]$d) { ($allLots | Where-Object { $_.Acq -le $d } | Measure-Object Qty -Sum).Sum }
+
+$a2Closing  = [long](($results | Measure-Object 'Closing (INR)' -Sum).Sum)
+$a2Dividend = [long](($results | Measure-Object 'Dividend (INR)' -Sum).Sum)
+$a2PeakUnit = 0.0
+foreach ($e in $dailyInr) {
+    $sh = 0.0
+    foreach ($l in $allLots) { if ($l.Acq -le $e.Date) { $sh += $l.Qty } }
+    $v = $sh * $e.Val
+    if ($v -gt $a2PeakUnit) { $a2PeakUnit = $v }
+}
+$a2Peak = [math]::Round($a2PeakUnit)
+
+$a2Row = [pscustomobject][ordered]@{
+    'Country/Region name'                                                                 = $EntityCountry
+    'Country Name and Code'                                                                = $EntityCountryCode
+    'Name of financial institution in which the account is held'                           = $A2InstitutionName
+    'Address of financial institution'                                                     = $A2InstitutionAddress
+    'ZIP Code'                                                                             = $A2Zip
+    'Account number'                                                                       = $A2AccountNumber
+    'Status'                                                                               = $A2Status
+    'Account opening date'                                                                 = $A2OpeningDate
+    'Peak balance during the period'                                                       = $a2Peak
+    'Closing balance'                                                                      = $a2Closing
+    'Gross amount paid/credited to the account during the period'                          = $a2Dividend
+}
+$a2Out = Join-Path $OutDir "ScheduleFA_A2_ITR_CY$Year.csv"
+$a2Row | Export-Csv -Path $a2Out -NoTypeInformation
+Write-Host ""
+Write-Host "Schedule FA - Table A2 : Foreign custodial account - Calendar Year $Year" -ForegroundColor Cyan
+Write-Host ("  Peak balance    : INR {0:N0}" -f $a2Peak)
+Write-Host ("  Closing balance : INR {0:N0}" -f $a2Closing)
+Write-Host ("  Amount paid     : INR {0:N0}" -f $a2Dividend)
+Write-Host "  NOTE: replace [input_value_here] cells in $a2Out before uploading." -ForegroundColor Yellow
+Write-Host "Written: $a2Out  (ITR-2 A2 import format)" -ForegroundColor Green
+
+# ---------------------------------------------------------------------------
 # Dividend income schedule (Schedule OS / FSI) - total holding basis.
 # Bucketed into ITR-2 "Schedule OS" advance-tax quarters by dividend PAY date.
 # Income and foreign tax converted per Rule 128 (prev-month-end of pay date).
@@ -292,16 +361,6 @@ if ($DividendBasis -eq 'FY') {
     $divStart = "$Year-01-01"; $divEnd = "$Year-12-31"
     $periodLabel = "CY $Year"
 }
-
-# Total shares held on a date = sum of lot quantities with acq <= date
-$allLots = @(Import-Csv $LotCsv | Where-Object { $_.'Date acquired' -match '^[A-Za-z]{3}-\d{2}-\d{4}$' } |
-    ForEach-Object {
-        [pscustomobject]@{
-            Acq = [datetime]::ParseExact($_.'Date acquired','MMM-dd-yyyy',[System.Globalization.CultureInfo]::InvariantCulture).ToString('yyyy-MM-dd')
-            Qty = [double]$_.Quantity
-        }
-    })
-function SharesHeld([string]$d) { ($allLots | Where-Object { $_.Acq -le $d } | Measure-Object Qty -Sum).Sum }
 
 function OsQuarter([string]$d) {
     # Indian FY advance-tax quarters (FY starts 1 Apr; Jan-Mar are late in the FY)
@@ -374,6 +433,22 @@ tfoot td{font-weight:bold;background:#f7f9fc}
 <p class='small'>Country: 2 - UNITED STATES OF AMERICA &nbsp;|&nbsp; Entity: $entity, $addr (Listed Company)<br>
 Closing rate: SBI TTBR $closeRate on $yEnd &nbsp;|&nbsp; MSFT close `$$closePrice<br>
 Values converted using SBI TT Buy Rate. Asset values use the actual-date rate; dividends use Rule 128 (last day of the month preceding the pay date).</p>
+<h2>Table A2 - Details of foreign custodial account</h2>
+<p class='small'>User-identifying fields are hardcoded placeholders - replace [input_value_here] with your custodian's details before uploading.</p>
+<table><thead><tr>
+<th class='l'>Field</th><th class='l'>Value</th></tr></thead><tbody>
+<tr><td class='l'>Country/Region name</td><td class='l'>$EntityCountry</td></tr>
+<tr><td class='l'>Country Name and Code</td><td class='l'>$EntityCountryCode</td></tr>
+<tr><td class='l'>Name of financial institution</td><td class='l'>$A2InstitutionName</td></tr>
+<tr><td class='l'>Address of financial institution</td><td class='l'>$A2InstitutionAddress</td></tr>
+<tr><td class='l'>ZIP Code</td><td class='l'>$A2Zip</td></tr>
+<tr><td class='l'>Account number</td><td class='l'>$A2AccountNumber</td></tr>
+<tr><td class='l'>Status</td><td class='l'>$A2Status</td></tr>
+<tr><td class='l'>Account opening date</td><td class='l'>$A2OpeningDate</td></tr>
+<tr><td class='l'>Peak balance during the period (INR)</td><td>$('{0:N0}' -f $a2Peak)</td></tr>
+<tr><td class='l'>Closing balance (INR)</td><td>$('{0:N0}' -f $a2Closing)</td></tr>
+<tr><td class='l'>Gross amount paid/credited to the account (INR)</td><td>$('{0:N0}' -f $a2Dividend)</td></tr>
+</tbody></table>
 <h2>Table A3 - Details of foreign assets and income</h2>
 <table><thead><tr>
 <th>S.No</th><th>Date of acquiring interest</th><th>Qty</th><th>Source</th>
